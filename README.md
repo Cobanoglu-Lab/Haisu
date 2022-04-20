@@ -6,7 +6,7 @@ Python   : 3.7+
 Libraries: networkx, sklearn
 
 ## Usage
-1. Initialize HAISU object w/ set of labels and an adjacency matrix defining the hierarchy graph.
+1. Initialize HAISU object w/ set of labels and an adjacency matrix defining the hierarchy graph. Optionally set disconnected_dist to a value > 1 to specify the normalized distance of disconnected nodes where non-disconnected nodes are between values [0,1]
 ```sh
 haisu = HAISU(label_set, adjacency_matrix)
 ```
