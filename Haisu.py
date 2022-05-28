@@ -23,9 +23,12 @@ def concat_onehot(X, labels, global_weight = 1):
 
 '''
 An Expanded version of Haisu to support additional configurations
+
+disconnected_dist: the graph distance between disconnected components (before normalization [0,1])
+avoid_self: a list of labels for which intra-class labels are weighted (after normalization) with min(self_dist,1)
 '''
 class HAISU:
-    def __init__(self, graph_labels, ajmatrix, disconnected_dist=1):
+    def __init__(self, graph_labels, ajmatrix, disconnected_dist=1, avoid_self=[], self_dist=1):
         self.X_embedded = None
         self.labels = None
         self.labeldict = {}
@@ -34,8 +37,8 @@ class HAISU:
         self.pathcache = None
         self.labelvalues = None
         self.label_probs = []
-        self._init_graph(graph_labels, ajmatrix, disconnected_dist)
-        
+        self._init_graph(graph_labels, ajmatrix,disconnected_dist, avoid_self, self_dist)
+
         # AUTO:
         self._X = None
         self._ylabels = None
@@ -47,7 +50,7 @@ class HAISU:
         self._metric = None
         self._n_job = None
         
-    def _init_graph(self, graph_labels, ajmatrix, disconnected_dist):
+    def _init_graph(self, graph_labels, ajmatrix,disconnected_dist,avoid_self,self_dist):
         # Dictionary from labels:
         cnt = 0
         for label in graph_labels:
@@ -56,38 +59,35 @@ class HAISU:
             
         # Make graph & find maximum shortest path:
         self.graph = nx.from_numpy_matrix(ajmatrix)
-        self.max_shortestpath = 0
-        for i in range(len(graph_labels)+1):
-            for j in range(len(graph_labels)+1):
-                try: 
-                    path_len = nx.shortest_path_length(self.graph, i, j)
-                except: path_len = -1 # no path
+        for i in range(self.graph.size()+1):
+            for j in range(self.graph.size()+1):
+                #path_len = 0 # disconnected default
+                if not nx.has_path(self.graph,i,j): continue#
+                path_len = nx.shortest_path_length(self.graph, i, j)
                 if path_len > self.max_shortestpath:
-                    #print(i,j,path_len)
                     self.max_shortestpath = path_len
                     
+        disconnected = []
         #self.pathcache = np.zeros((self.graph.size()+1, self.graph.size()+1))
-        self.pathcache = np.ones((len(graph_labels)+1, len(graph_labels)+1)) # max dist (1) for disconnected graphs
-        for i in range(len(graph_labels)+1):
-            for j in range(len(graph_labels)+1):
-                if(i == j):
-                    #print(i,j,'== =',0)
-                    self.pathcache[i,j] = 0
-                    continue
-                try: p = nx.shortest_path_length(self.graph, i, j)
-                except:
-                    print(i,j,'were disconnected')
-                    self.pathcache[i,j] = disconnected_dist # distance from 1 (note everything is normalized after)
-                    #print(i,j,' except =',1)
-                    continue
-                if (p < 1):
-                    #print(i,j,' <1 =',0)
+        self.pathcache = np.ones((len(graph_labels), len(graph_labels))) # max dist (1) for disconnected graphs
+        for i in range(len(graph_labels)):
+            for j in range(len(graph_labels)):
+                if i == j:
+                    self.pathcache[i,j] = 1
+                if not nx.has_path(self.graph,i,j):
+                   self.pathcache[i,j] = disconnected_dist
+                #elif i == j:
+                #   self.pathcache[i,j] = 0
+                elif (nx.shortest_path_length(self.graph, i, j) < 1):
                     self.pathcache[i,j] = 0
                 else:
-                    #print(i,j,' divmax =',p,'/',self.max_shortestpath)
-                    self.pathcache[i,j] = p/self.max_shortestpath
-        self.pathcache=(self.pathcache -np.min(self.pathcache)) / (np.max(self.pathcache)-np.min(self.pathcache)) # ensure 0,1 norm
-                    
+                    self.pathcache[i,j] = (nx.shortest_path_length(self.graph, i, j))/self.max_shortestpath
+        self.pathcache=(self.pathcache -np.min(self.pathcache)) / (np.max(self.pathcache)-np.min(self.pathcache)) # ensure 0,1
+        for a in avoid_self:
+            self.pathcache[self.labeldict[a],self.labeldict[a]] = min(self_dist, disconnected_dist) # set self_dist to self_dist or 1
+        #if avoid_self: 
+        #    for d in range(len(graph_labels)): self.pathcache[d,d] = min(self_dist, disconnected_dist) # set self_dist to disconnected_dist or 1         
+    
     def show_graph_info(self):
         cnt = 0; glabels={}
         for label in self.labeldict:
@@ -150,7 +150,7 @@ class HAISU:
         self._metric = metric
         self._n_jobs = n_jobs
     
-    def get_pairwise_matrix(self, X, ylabels, factor, ylabel_probs=[], transpose=False, normalize=True, metric='euclidean',n_jobs=1):
+    def get_pairwise_matrix(self, X, ylabels, factor, ylabel_probs=[], transpose=False, normalize=True, squared=True, metric='euclidean',n_jobs=1):
         if transpose:
             X = X.transpose()
         
@@ -215,13 +215,15 @@ class HAISU:
                     dists[i, j] = (1-(factor*ijp))+self.path_dist(i,j)*(factor*ijp) 
             dists = dists
         else:
-            if(True):
+            if(True):#n_jobs == 1):
+                print('single thread...')
                 for i in range(1,shape):
                     for j in range(i):
                         dists[i,j] = (1-factor)+self.pathcache[self.labeldict[self.labels[i]],self.labeldict[self.labels[j]]]*factor
                         dists[j,i] = dists[i,j]
                 dists = dists
             elif(n_jobs > 1):
+                print('multi-threading...')
                 self.factor = factor
                 dists_base = mp.Array(ctypes.c_float, shape*shape)
                 self.dists = np.ctypeslib.as_array(dists_base.get_obj())
