@@ -3,10 +3,17 @@
 
 ## Minimum Prerequisites
 Python   : 3.7+ 
-Libraries: networkx, sklearn
+Libraries: networkx(2+), sklearn
 
 ## Usage
 1. Initialize HAISU object w/ set of labels and an adjacency matrix defining the hierarchy graph. Optionally set disconnected_dist to a value > 1 to specify the normalized distance of disconnected nodes where non-disconnected nodes are between values [0,1]
+
+- disconnected_dist: The path distance before normalization between two disconnected graph nodes.
+- avoid_self: The list of labels to apply the parameter self_dist to.
+- self_dist: The distance from a node to itself [0,1] applied after normalization. 
+- edge_weights: Weights for nodes using tuple graph node indices matching the adjanceny matrix indices - applied before normalization (1 by default).
+               ex: edge_weights = {(1, 3): 0.2, (3, 0): 2}
+
 ```sh
 haisu = HAISU(label_set, adjacency_matrix)
 ```

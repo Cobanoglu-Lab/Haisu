@@ -28,7 +28,7 @@ disconnected_dist: the graph distance between disconnected components (before no
 avoid_self: a list of labels for which intra-class labels are weighted (after normalization) with min(self_dist,1)
 '''
 class HAISU:
-    def __init__(self, graph_labels, ajmatrix, disconnected_dist=1, avoid_self=[], self_dist=1):
+    def __init__(self, graph_labels, ajmatrix, disconnected_dist=1, avoid_self=[], self_dist=1, edge_weights={}):
         self.X_embedded = None
         self.labels = None
         self.labeldict = {}
@@ -37,7 +37,8 @@ class HAISU:
         self.pathcache = None
         self.labelvalues = None
         self.label_probs = []
-        self._init_graph(graph_labels, ajmatrix,disconnected_dist, avoid_self, self_dist)
+        self.edge_weights = {}
+        self._init_graph(graph_labels, ajmatrix,disconnected_dist, avoid_self, self_dist, edge_weights)
 
         # AUTO:
         self._X = None
@@ -50,7 +51,7 @@ class HAISU:
         self._metric = None
         self._n_job = None
         
-    def _init_graph(self, graph_labels, ajmatrix,disconnected_dist,avoid_self,self_dist):
+    def _init_graph(self, graph_labels, ajmatrix,disconnected_dist,avoid_self,self_dist, edge_weights):
         # Dictionary from labels:
         cnt = 0
         for label in graph_labels:
@@ -58,12 +59,18 @@ class HAISU:
             self.labeldict[sys.intern(label)] = cnt; cnt+=1
             
         # Make graph & find maximum shortest path:
+        self.edge_weights = edge_weights
         self.graph = nx.from_numpy_matrix(ajmatrix)
+        nx.set_edge_attributes(self.graph, self.edge_weights, 'weight')
+
+        def weight_func(i,j,ddict):
+            return ddict['weight']
+
         for i in range(self.graph.size()+1):
             for j in range(self.graph.size()+1):
                 #path_len = 0 # disconnected default
                 if not nx.has_path(self.graph,i,j): continue#
-                path_len = nx.shortest_path_length(self.graph, i, j)
+                path_len = nx.shortest_path_length(self.graph, i, j,weight=weight_func)
                 if path_len > self.max_shortestpath:
                     self.max_shortestpath = path_len
                     
@@ -78,22 +85,25 @@ class HAISU:
                    self.pathcache[i,j] = disconnected_dist
                 #elif i == j:
                 #   self.pathcache[i,j] = 0
-                elif (nx.shortest_path_length(self.graph, i, j) < 1):
+                elif (nx.shortest_path_length(self.graph, i, j, weight=weight_func) < 1):
                     self.pathcache[i,j] = 0
                 else:
-                    self.pathcache[i,j] = (nx.shortest_path_length(self.graph, i, j))/self.max_shortestpath
+                    self.pathcache[i,j] = (nx.shortest_path_length(self.graph, i, j, weight=weight_func))/self.max_shortestpath
         self.pathcache=(self.pathcache -np.min(self.pathcache)) / (np.max(self.pathcache)-np.min(self.pathcache)) # ensure 0,1
         for a in avoid_self:
-            self.pathcache[self.labeldict[a],self.labeldict[a]] = min(self_dist, disconnected_dist) # set self_dist to self_dist or 1
+            self.pathcache[self.labeldict[a],self.labeldict[a]] = min(self_dist, 1) # set self_dist to self_dist or 1
         #if avoid_self: 
         #    for d in range(len(graph_labels)): self.pathcache[d,d] = min(self_dist, disconnected_dist) # set self_dist to disconnected_dist or 1         
     
-    def show_graph_info(self):
+    def show_graph_info(self,seed=-1):
         cnt = 0; glabels={}
         for label in self.labeldict:
             glabels[cnt] = str(cnt)
             cnt+=1
-        nx.draw(self.graph, labels = glabels)
+        if seed == -1: pos=nx.spring_layout(self.graph) # default use random
+        else: pos=nx.spring_layout(self.graph,seed=seed)
+        nx.draw_networkx_edge_labels(self.graph,pos=pos,edge_labels=self.edge_weights)
+        nx.draw(self.graph, pos=pos,labels = glabels)
         
     def get_overlaps(self, data, labels):
         indices = np.array(labels)
