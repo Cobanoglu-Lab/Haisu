@@ -199,11 +199,11 @@ class HAISU:
     def path_dist(self, label1, label2):
     	return self.pathcache[self.labeldict.get(self.labels[label1]),self.labeldict.get(self.labels[label2])]
 
-    def fill_multi(self, ranges):
-        for i in ranges:
-                for j in range(i):
-                    self.dists[i,j] = (1-self.factor)+self.pathcache[self.labeldict[self.labels[i]],self.labeldict[self.labels[j]]]*self.factor
-                    self.dists[j,i] = self.dists[i,j]
+    def path_multi(self, i):
+        dists = np.zeros(len(self.labels))
+        for j in range(len(self.labels)):
+            dists[j] = (1-self.factor)+self.pathcache[self.labeldict[self.labels[i]],self.labeldict[self.labels[j]]]*self.factor
+        return dists
 
     def path_pairwise(self, x, factor = 1, squared=True, n_jobs = 1):
         shape = len(self.labels)
@@ -225,7 +225,7 @@ class HAISU:
                     dists[i, j] = (1-(factor*ijp))+self.path_dist(i,j)*(factor*ijp) 
             dists = dists
         else:
-            if(True):#n_jobs == 1):
+            if(n_jobs == 1):
                 print('single thread...')
                 for i in range(1,shape):
                     for j in range(i):
@@ -233,13 +233,8 @@ class HAISU:
                         dists[j,i] = dists[i,j]
                 dists = dists
             elif(n_jobs > 1):
-                print('multi-threading...')
+                print('multi thread...')
                 self.factor = factor
-                dists_base = mp.Array(ctypes.c_float, shape*shape)
-                self.dists = np.ctypeslib.as_array(dists_base.get_obj())
-                self.dists = self.dists.reshape(shape,shape)
-                print(self.dists[0][1])
-                with mp.Pool(mp.cpu_count()) as p:
-                    p.map(self.fill_multi, get_ranges(shape,mp.cpu_count()))
-                print(self.dists[0][1])
+                with mp.Pool(n_jobs) as p:
+                    dists = np.array(p.map(self.path_multi, range(shape)))
         return dists
