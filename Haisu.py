@@ -66,8 +66,8 @@ class HAISU:
         def weight_func(i,j,ddict):
             return ddict['weight']
 
-        for i in range(self.graph.size()+1):
-            for j in range(self.graph.size()+1):
+        for i in range(len(graph_labels)):
+            for j in range(len(graph_labels)):
                 #path_len = 0 # disconnected default
                 if not nx.has_path(self.graph,i,j): continue#
                 path_len = nx.shortest_path_length(self.graph, i, j,weight=weight_func)
